@@ -98,6 +98,7 @@ Press `CTRL+C` in the terminal where the server is running.
 Use the following cURL commands to test all major API functionality. Run these in PowerShell or Command Prompt.
 
 ### 1. Discovery Endpoint - Get API Metadata
+Verify the API is running and fetch metadata.
 ```bash
 curl -X GET "http://localhost:8080/api/v1/" -H "Accept: application/json"
 ```
@@ -113,7 +114,8 @@ curl -X GET "http://localhost:8080/api/v1/" -H "Accept: application/json"
 }
 ```
 
-### 2. Create a Room
+### 2. Create a Base Room
+Create the initial physical space required before adding any sensors.
 ```bash
 curl -X POST "http://localhost:8080/api/v1/rooms" ^
   -H "Content-Type: application/json" ^
@@ -130,6 +132,7 @@ curl -X POST "http://localhost:8080/api/v1/rooms" ^
 ```
 
 ### 3. Get All Rooms
+Verify the room was created successfully.
 ```bash
 curl -X GET "http://localhost:8080/api/v1/rooms" -H "Accept: application/json"
 ```
@@ -145,29 +148,91 @@ curl -X GET "http://localhost:8080/api/v1/rooms" -H "Accept: application/json"
 ]
 ```
 
-### 4. Create a Sensor and Link to Room
-First, create another room, then add a sensor:
+### 4. Create a Valid Sensor
+Link a new active sensor to the existing room.
 ```bash
-curl -X POST "http://localhost:8080/api/v1/rooms" ^
-  -H "Content-Type: application/json" ^
-  -d "{\"id\":\"LAB-101\",\"name\":\"Science Lab\",\"capacity\":30}"
-
 curl -X POST "http://localhost:8080/api/v1/sensors" ^
   -H "Content-Type: application/json" ^
-  -d "{\"id\":\"CO2-001\",\"type\":\"CO2\",\"status\":\"ONLINE\",\"currentValue\":400,\"roomId\":\"LAB-101\"}"
+  -d "{\"id\":\"CO2-001\",\"type\":\"CO2\",\"status\":\"ACTIVE\",\"currentValue\":0.0,\"roomId\":\"LIB-301\"}"
 ```
 **Expected Response (201 Created):**
 ```json
 {
   "id": "CO2-001",
   "type": "CO2",
-  "status": "ONLINE",
-  "currentValue": 400,
-  "roomId": "LAB-101"
+  "status": "ACTIVE",
+  "currentValue": 0.0,
+  "roomId": "LIB-301"
 }
 ```
 
-### 5. Get Sensors with Query Filter
+### 5. Create a Sensor in Maintenance Mode
+Add a second sensor to test state constraints later.
+```bash
+curl -X POST "http://localhost:8080/api/v1/sensors" ^
+  -H "Content-Type: application/json" ^
+  -d "{\"id\":\"OCC-001\",\"type\":\"CO2\",\"status\":\"MAINTENANCE\",\"currentValue\":0.0,\"roomId\":\"LIB-301\"}"
+```
+**Expected Response (201 Created):**
+```json
+{
+  "id": "OCC-001",
+  "type": "CO2",
+  "status": "MAINTENANCE",
+  "currentValue": 0.0,
+  "roomId": "LIB-301"
+}
+```
+
+### 6. Error Handling: Linked Resource Not Found
+Attempt to create a sensor for a room that does not exist.
+```bash
+curl -X POST "http://localhost:8080/api/v1/sensors" ^
+  -H "Content-Type: application/json" ^
+  -d "{\"id\":\"ERR-001\",\"type\":\"CO2\",\"status\":\"ACTIVE\",\"currentValue\":0.0,\"roomId\":\"FAKE-999\"}"
+```
+**Expected Response (422 Unprocessable Entity):**
+```json
+{
+  "status": 422,
+  "error": "Unprocessable Entity",
+  "message": "Cannot create sensor: room 'FAKE-999' does not exist."
+}
+```
+
+### 7. Get a Specific Sensor
+Verify the state of the active sensor.
+```bash
+curl -X GET "http://localhost:8080/api/v1/sensors/CO2-001" -H "Accept: application/json"
+```
+**Expected Response (200 OK):**
+```json
+{
+  "id": "CO2-001",
+  "type": "CO2",
+  "status": "ACTIVE",
+  "currentValue": 0.0,
+  "roomId": "LIB-301"
+}
+```
+
+### 8. Get a Specific Room
+Verify the room now accurately reflects the assigned sensor IDs.
+```bash
+curl -X GET "http://localhost:8080/api/v1/rooms/LIB-301" -H "Accept: application/json"
+```
+**Expected Response (200 OK):**
+```json
+{
+  "id": "LIB-301",
+  "name": "Library Quiet Study",
+  "capacity": 50,
+  "sensorIds": ["CO2-001", "OCC-001"]
+}
+```
+
+### 9. Filter Sensors by Type
+Test query parameters for filtering the sensor collection.
 ```bash
 curl -X GET "http://localhost:8080/api/v1/sensors?type=CO2" -H "Accept: application/json"
 ```
@@ -177,29 +242,38 @@ curl -X GET "http://localhost:8080/api/v1/sensors?type=CO2" -H "Accept: applicat
   {
     "id": "CO2-001",
     "type": "CO2",
-    "status": "ONLINE",
-    "currentValue": 400,
-    "roomId": "LAB-101"
+    "status": "ACTIVE",
+    "currentValue": 0.0,
+    "roomId": "LIB-301"
+  },
+  {
+    "id": "OCC-001",
+    "type": "CO2",
+    "status": "MAINTENANCE",
+    "currentValue": 0.0,
+    "roomId": "LIB-301"
   }
 ]
 ```
 
-### 6. Add a Sensor Reading
+### 10. Add a Valid Sensor Reading
+Submit data to the active sensor.
 ```bash
 curl -X POST "http://localhost:8080/api/v1/sensors/CO2-001/readings" ^
   -H "Content-Type: application/json" ^
-  -d "{\"id\":\"READ-001\",\"timestamp\":1713950400000,\"value\":425}"
+  -d "{\"id\":\"READ-001\",\"timestamp\":1713950000,\"value\":415.5}"
 ```
 **Expected Response (201 Created):**
 ```json
 {
   "id": "READ-001",
-  "timestamp": 1713950400000,
-  "value": 425
+  "timestamp": 1713950000,
+  "value": 415.5
 }
 ```
 
-### 7. Get All Sensor Readings for a Sensor
+### 11. Get All Sensor Readings
+Verify the reading was saved to the sensor's history.
 ```bash
 curl -X GET "http://localhost:8080/api/v1/sensors/CO2-001/readings" -H "Accept: application/json"
 ```
@@ -208,51 +282,66 @@ curl -X GET "http://localhost:8080/api/v1/sensors/CO2-001/readings" -H "Accept: 
 [
   {
     "id": "READ-001",
-    "timestamp": 1713950400000,
-    "value": 425
+    "timestamp": 1713950000,
+    "value": 415.5
   }
 ]
 ```
 
-### 8. Get a Specific Sensor
+### 12. Error Handling: State Constraint Validation
+Attempt to add a reading to a sensor that is not ACTIVE.
 ```bash
-curl -X GET "http://localhost:8080/api/v1/sensors/CO2-001" -H "Accept: application/json"
+curl -X POST "http://localhost:8080/api/v1/sensors/OCC-001/readings" ^
+  -H "Content-Type: application/json" ^
+  -d "{\"id\":\"READ-002\",\"timestamp\":1713950000,\"value\":415.5}"
 ```
-**Expected Response (200 OK):**
+**Expected Response (403 Forbidden):**
 ```json
 {
-  "id": "CO2-001",
-  "type": "CO2",
-  "status": "ONLINE",
-  "currentValue": 425,
-  "roomId": "LAB-101"
+  "status": 403,
+  "error": "Forbidden",
+  "message": "Sensor 'OCC-001' is unavailable and cannot accept readings."
 }
 ```
 
-### 9. Get a Specific Room
+### 13. Error Handling: Delete Occupied Room
+Attempt to delete a room that still has active sensors assigned to it.
 ```bash
-curl -X GET "http://localhost:8080/api/v1/rooms/LAB-101" -H "Accept: application/json"
+curl -X DELETE "http://localhost:8080/api/v1/rooms/LIB-301"
 ```
-**Expected Response (200 OK):**
+**Expected Response (409 Conflict):**
 ```json
 {
-  "id": "LAB-101",
-  "name": "Science Lab",
-  "capacity": 30,
-  "sensorIds": ["CO2-001"]
+  "status": 409,
+  "error": "Conflict",
+  "message": "Room 'LIB-301' cannot be deleted: it still has sensors assigned."
 }
 ```
 
-### 10. Attempt to Delete a Room with Sensors (Error Case)
+### 14. Delete an Empty Room
+Test the successful deletion of a room with no dependent resources.
+
+**Step 14a: Create Empty Room**
 ```bash
-curl -X DELETE "http://localhost:8080/api/v1/rooms/LAB-101"
+curl -X POST "http://localhost:8080/api/v1/rooms" ^
+  -H "Content-Type: application/json" ^
+  -d "{\"id\":\"LIB-302\",\"name\":\"Library Quiet Study\",\"capacity\":50}"
 ```
-**Expected Response (400 Bad Request):**
+**Expected Response (201 Created):**
 ```json
 {
-  "error": "Cannot delete room: Active sensors are still assigned."
+  "id": "LIB-302",
+  "name": "Library Quiet Study",
+  "capacity": 50,
+  "sensorIds": []
 }
 ```
+
+**Step 14b: Delete Empty Room**
+```bash
+curl -X DELETE "http://localhost:8080/api/v1/rooms/LIB-302"
+```
+**Expected Response (204 No Content)**
 
 ---
 
@@ -288,86 +377,3 @@ SmartCampus API (Jersey + Grizzly)
         ├── RoomNotEmptyException
         └── SensorUnavailableException
 ```
-    "status": "ACTIVE",
-    "currentValue": 0.0,
-    "roomId": "FAKE-999"
-}
-expected status : 422
-
-## 11 Valid sensor
-url : http://localhost:8080/api/v1/sensors
-method : POST
-body :
-{
-"id": "CO2-001",
-"type": "CO2",
-"status": "ACTIVE",
-"currentValue": 0.0,
-"roomId": "LIB-301"
-}
-expected status : 201
-
-## 12
-url : http://localhost:8080/api/v1/sensors
-method : POST
-body :
-{
-"id": "OCC-001",
-"type": "CO2",
-"status": "MAINTENANCE",
-"currentValue": 0.0,
-"roomId": "LIB-301"
-}
-expected status : 201
-
-#phase 6 Test Sensor Filtering
-url : http://localhost:8080/api/v1/sensors?type=CO2
-method : GET
-expected status : 200
-
-# 13 Sensor Reading
-url : http://localhost:8080/api/v1/sensors/CO2-001/readings
-method : POST
-body :
-{
-"id": "READ-001",
-"timestamp": 1713950000,
-"value": 415.5
-}
-expected status : 201
-
-
-# 14. Error handling  403 state constraint
-url : http://localhost:8080/api/v1/sensors/OCC-001/readings
-method : POST
-body :
-{
-"id": "READ-001",
-"timestamp": 1713950000,
-"value": 415.5
-}
-expected status : 403
-
-# 15.Deleting a occupied room
-URL: http://localhost:8080/api/v1/rooms/LIB-301
-method : DELETE
-
-expected status : 409
-
-# 16. delete an empty room
-step 1:
-url : http://localhost:8080/api/v1/rooms
-method : POST
-body :
-{
-"id": "LIB-302",
-"name": "Library Quiet Study",
-"capacity": 50
-}
-expected status : 201
-
-step 2:
-URL: http://localhost:8080/api/v1/rooms/LIB-302
-method : DELETE
-
-expected status : 204
